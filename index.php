@@ -1,11 +1,25 @@
 <?php
-exec("ls sh", $shList);;
-
-if (isset($_POST["shName"])) {
-  if (isset($_POST["args"]) && $_POST["args"] != "[]") {
-    $argsList = $_POST["args"];
+if (isset($_GET["shName"])) {
+  $cmd = 'sh ./sh/'.$_GET["shName"].$_GET["args"];
+  exec($cmd, $result);
+  echo json_encode($result);
+  exit;
+}
+if (isset($_GET["fileList"])) {
+  exec("ls sh", $result);
+  $shList = [];
+  foreach ($result as $key => $shName) {
+    $file = file("sh/".$shName);
+    if (array_key_exists(1, $file)) {
+      $exp = $file[1];
+      if (!preg_match("/^#/", $exp)) {
+        $exp = "#説明なし";
+      }
+    }
+    $shList[$key] = array( "name"=>$shName, "exp"=>$exp );
   }
-  exec("./sh/".$_POST["shName"].$argsList, $result);
+  echo json_encode($shList);
+  exit;
 }
 ?>
 
@@ -29,7 +43,7 @@ if (isset($_POST["shName"])) {
         mobile-break-point="960"
       >
         <v-list class="pt-0">
-          <v-list-tile @click="" onclick="location.reload()">
+          <v-list-tile @click="fileList">
             <v-list-tile-action>
               <v-icon>cached</v-icon>
             </v-list-tile-action>
@@ -38,16 +52,16 @@ if (isset($_POST["shName"])) {
             </v-list-tile-content>
           </v-list-tile>
           <v-divider></v-divider>
-          <?php
-          foreach($shList as $shName){
-            echo "
-            <v-list-tile @click='select.name=`$shName`'>
-              <v-list-tile-content>
-                <v-list-tile-title>$shName</v-list-tile-title>
-              </v-list-tile-content>
-            </v-list-tile>";
-          }
-          ?>
+          <template>
+            <v-progress-linear class="my-0" height="2" :active="filesLoading" :indeterminate="filesLoading"></v-progress-linear>
+          </template>
+
+          <v-list-tile v-for="file in files" @click="select.name=file.name;select.exp=file.exp">
+            <v-list-tile-content>
+              <v-list-tile-title>{{ file.name }}</v-list-tile-title>
+            </v-list-tile-content>
+          </v-list-tile>
+
         </v-list>
       </v-navigation-drawer>
       <v-toolbar
@@ -69,7 +83,7 @@ if (isset($_POST["shName"])) {
                 <v-card-title primary-title>
                   <div>
                     <div class="headline mb-2">{{ select.name }}</div>
-                    {{ select.exp }}
+                    <span>{{ select.exp }}</span>
                   </div>
                 </v-card-title>
                 <v-card-actions class="pa-3">
@@ -83,8 +97,9 @@ if (isset($_POST["shName"])) {
                     small-chips
                     counter="true"
                     append-icon=""
-                    item-text="text"
+                    item-text="name"
                     item-value="id"
+                    :disabled="select.name=='シェルスクリプト名'"
                   >
                     <template v-slot:selection="{ item, parent, selected }">
                       <v-chip
@@ -95,7 +110,7 @@ if (isset($_POST["shName"])) {
                         small
                       >
                         <span class="pr-2">
-                          {{ item.text }}
+                          {{ item.name }}
                         </span>
                         <v-icon
                           small
@@ -104,35 +119,47 @@ if (isset($_POST["shName"])) {
                       </v-chip>
                     </template>
                   </v-combobox>
-                  <v-form method="post">
-                    <input type="hidden" name="shName" :value="select.name" required>
-                    <input type="hidden" name="args" :value="makeArgsList">
-                    <v-btn type="submit" class="ml-3" color="success lighten-1" :disabled="select.name=='シェルスクリプト名'">実行</v-btn>
-                  </v-form>
+                  <v-btn
+                    class="ml-3"
+                    @click="execCmd()"
+                    color="success lighten-1"
+                    :loading="loading"
+                    :disabled="select.name=='シェルスクリプト名' || loading"
+                  >
+                    実行
+                  </v-btn>
                 </v-card-actions>
               </v-card>
 
-              <v-card class="mt-3" color="grey lighten-3" style="min-height:120px;">
-                <v-card-title class="pb-4" primary-title>
-                  <v-layout>
-                    <v-flex>
-                      <div class="headline mb-2">実行結果</div>
-                      <?php
-                      if (isset($result)) {
-                        echo "<div class='font-weight-bold mb-1'>$ ./".$_POST["shName"].$argsList."</div><div>";
-                        foreach ($result as $line) {
-                          if ($line === end($result)) {
-                            echo $line."</div>";
-                            break;
-                          }
-                          echo $line."<br>";
-                        }
-                      }
-                      ?>
-                    </v-flex>
-                  </v-layout>
+              <v-card class="mt-3" :color="resultColor" style="min-height:120px;">
+                <v-card-title class="pb-1" primary-title>
+                  <div class="headline">実行結果</div>
+                </v-card-title>
+                <v-card-text class="pt-0 pb-4">
+                  <kbd class='font-weight-bold mb-1' :class="result.cmd ? '' : 'd-none'">{{ result.cmd }}</kbd>
+                  <span class="text-xs-right ml-2">{{ result.date }}</span>
+                  <div style="white-space:pre-wrap; word-wrap:break-word;">{{ result.log }}</div>
+                </v-card-text>
+              </v-card>
+
+              <v-card class="mt-5" color="grey lighten-2" :class="(histories[1] || (histories[0] && localstorage)) ? '' : 'd-none'">
+                <v-card-title class="py-2" primary-title>
+                  <div class="headline">履歴</div>
+                  <v-spacer></v-spacer>
+                  <v-btn icon class="ma-0" @click="clearLocalStorage">
+                    <v-icon>clear</v-icon>
+                  </v-btn>
                 </v-card-title>
               </v-card>
+
+              <v-card class="mt-3" :color="(history.log==errorMessage ? 'error' : 'grey') + ' lighten-3'" v-for="(history, index) in histories" v-if="!(index==0 && !localstorage)">
+                <v-card-text class="pb-4">
+                  <kbd class='font-weight-bold mb-1'>{{ history.cmd }}</kbd>
+                  <span class="text-xs-right ml-2">{{ history.date }}</span>
+                  <div style="white-space:pre-wrap;word-wrap:break-word;">{{ history.log }}</div>
+                </v-card-text>
+              </v-card>
+
             </v-flex>
           </v-layout>
         </v-container>
@@ -143,14 +170,23 @@ if (isset($_POST["shName"])) {
 
   <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/vuetify/dist/vuetify.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
   <script>
     new Vue({
       el: "#app",
       data: {
         drawer: window.innerWidth >= 960 ? true : false,
-        select: { name: "シェルスクリプト名", exp: "説明" },
+        localstorage: false,
+        files: [],
+        select: { name: "シェルスクリプト名", exp: "#説明" },
         nonce: 0,
-        args: []
+        args: [],
+        errorMessage: "エラーが発生しました",
+        filesLoading: false,
+        loading: false,
+        result: { cmd: "", log: "", date: "" },
+        histories: [],
+        resultColor: ""
       },
       watch: {
         args(val, prev) {
@@ -158,7 +194,7 @@ if (isset($_POST["shName"])) {
           this.args = val.map(v => {
             if (typeof v === 'string') {
               v = {
-                text: v,
+                name: v,
                 id: this.nonce
               }
               this.nonce++
@@ -167,13 +203,89 @@ if (isset($_POST["shName"])) {
           })
         }
       },
-      computed: {
-        makeArgsList: function() {
+      mounted: function() {
+        axios
+        .get("/shell", {
+          params: {
+            fileList: true,
+          }
+        })
+        .then(res => {
+          this.files = res.data;
+        })
+        .catch(() => {
+          this.files.name = this.errorMessage;
+        });
+        if (localStorage.getItem("history")) {
+          this.histories = JSON.parse(localStorage.getItem("history"));
+          this.localstorage = true;
+        }
+      },
+      methods: {
+        fileList: function(){
+          this.filesLoading = true;
+          axios
+          .get("/shell", {
+            params: {
+              fileList: true,
+            }
+          })
+          .then(res => {
+            console.log(res.data);
+            this.files = res.data;
+          })
+          .catch(() => {
+            this.files.name = this.errorMessage;
+          })
+          .then(() => {
+            setTimeout(() => { this.filesLoading = false }, 1000);
+          });
+        },
+        execCmd: function() {
           let argsList = "";
           for (var i = 0; i < this.args.length; i++) {
-            argsList += " "+this.args[i].text;
+            argsList += " "+this.args[i].name;
           }
-          return argsList;
+          this.loading = true;
+          this.result.cmd = "$ ./" + this.select.name + argsList;
+          this.result.log = "";
+          this.resultColor = "";
+          axios
+          .get("/shell", {
+            params: {
+              shName: this.select.name,
+              args: argsList
+            }
+          })
+          .then(res => {
+            let data = res.data;
+            this.result.date = new Date().toLocaleString();
+            if (!data[0]) {
+              throw new Error();
+            }
+            for (let i = 0; i < data.length-1; i++) {
+              this.result.log += data[i] + "\n";
+            }
+            this.result.log += data.slice(-1)[0];
+            this.loading = false;
+            this.resultColor = "success lighten-5";
+          })
+          .catch(() => {
+            this.result.log = this.errorMessage;
+            this.loading = false;
+            this.resultColor = "error lighten-3";
+          })
+          .then(() => {
+            this.localstorage = false;
+            this.histories.unshift({ cmd: this.result.cmd, log: this.result.log, date: this.result.date });
+            localStorage.setItem("history", JSON.stringify(this.histories));
+          });
+        },
+        clearLocalStorage: function() {
+          if(confirm("履歴を削除しますか？")) {
+            localStorage.removeItem("history");
+            this.histories = [];
+          }
         }
       }
     })
