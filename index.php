@@ -142,7 +142,7 @@ if (isset($_GET["fileList"])) {
                 </v-card-text>
               </v-card>
 
-              <v-card class="mt-5" color="grey lighten-2" :class="(histories[1] || (histories[0] && localstorage)) ? '' : 'd-none'">
+              <v-card class="mt-5" color="grey lighten-2" :class="(histories[1] || (histories[0] && status)) ? '' : 'd-none'">
                 <v-card-title class="py-2" primary-title>
                   <div class="headline">履歴</div>
                   <v-spacer></v-spacer>
@@ -152,7 +152,7 @@ if (isset($_GET["fileList"])) {
                 </v-card-title>
               </v-card>
 
-              <v-card class="mt-3" :color="(history.log==errorMessage ? 'error' : 'grey') + ' lighten-3'" v-for="(history, index) in histories" v-if="!(index==0 && !localstorage)">
+              <v-card class="mt-3" :color="(history.log==errorMessage ? 'error' : 'grey') + ' lighten-3'" v-for="(history, index) in histories" v-if="!(index==0 && !status)">
                 <v-card-text class="pb-4">
                   <kbd class='font-weight-bold mb-1'>{{ history.cmd }}</kbd>
                   <span class="text-xs-right ml-2">{{ history.date }}</span>
@@ -176,7 +176,7 @@ if (isset($_GET["fileList"])) {
       el: "#app",
       data: {
         drawer: window.innerWidth >= 960 ? true : false,
-        localstorage: false,
+        status: false,
         files: [],
         select: { name: "シェルスクリプト名", exp: "#説明" },
         nonce: 0,
@@ -218,7 +218,7 @@ if (isset($_GET["fileList"])) {
         });
         if (localStorage.getItem("history")) {
           this.histories = JSON.parse(localStorage.getItem("history"));
-          this.localstorage = true;
+          this.status = true;
         }
       },
       methods: {
@@ -246,6 +246,7 @@ if (isset($_GET["fileList"])) {
           for (var i = 0; i < this.args.length; i++) {
             argsList += " "+this.args[i].name;
           }
+          this.status = true;
           this.loading = true;
           this.result.cmd = "$ ./" + this.select.name + argsList;
           this.result.log = "";
@@ -276,7 +277,7 @@ if (isset($_GET["fileList"])) {
             this.resultColor = "error lighten-3";
           })
           .then(() => {
-            this.localstorage = false;
+            this.status = false;
             this.histories.unshift({ cmd: this.result.cmd, log: this.result.log, date: this.result.date });
             localStorage.setItem("history", JSON.stringify(this.histories));
           });
