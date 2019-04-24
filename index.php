@@ -6,17 +6,17 @@ if (isset($_GET["shName"])) {
   exit;
 }
 if (isset($_GET["fileList"])) {
-  exec("ls sh", $result);
+  exec("ls sh/*.sh", $result);
   $shList = [];
   foreach ($result as $key => $shName) {
-    $file = file("sh/".$shName);
+    $file = file($shName);
     if (array_key_exists(1, $file)) {
       $exp = $file[1];
       if (!preg_match("/^#/", $exp)) {
         $exp = "#説明なし";
       }
     }
-    $shList[$key] = array( "name"=>$shName, "exp"=>$exp );
+    $shList[$key] = array( "name"=>preg_replace("/^sh\//", "", $shName), "exp"=>$exp );
   }
   echo json_encode($shList);
   exit;
@@ -56,7 +56,7 @@ if (isset($_GET["fileList"])) {
             <v-progress-linear class="my-0" height="2" :active="filesLoading" :indeterminate="filesLoading"></v-progress-linear>
           </template>
 
-          <v-list-tile v-for="file in files" @click="select.name=file.name;select.exp=file.exp">
+          <v-list-tile v-for="file in files" @click="selectFile(file)">
             <v-list-tile-content>
               <v-list-tile-title>{{ file.name }}</v-list-tile-title>
             </v-list-tile-content>
@@ -241,6 +241,13 @@ if (isset($_GET["fileList"])) {
             setTimeout(() => { this.filesLoading = false }, 1000);
           });
         },
+        selectFile: function(file) {
+          this.select.name = file.name;
+          this.select.exp = file.exp;
+          if (window.innerWidth < 960) {
+            this.drawer = !this.drawer;
+          }
+        },
         execCmd: function() {
           let argsList = "";
           for (var i = 0; i < this.args.length; i++) {
@@ -285,7 +292,9 @@ if (isset($_GET["fileList"])) {
         clearLocalStorage: function() {
           if(confirm("履歴を削除しますか？")) {
             localStorage.removeItem("history");
+            this.result = {};
             this.histories = [];
+            this.resultColor = "";
           }
         }
       }
